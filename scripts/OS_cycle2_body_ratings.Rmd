@@ -1,0 +1,1271 @@
+---
+title: "Shedding new light on ovulatory cycle shifts in women’s mate attraction and preferences"
+author: "Julia Stern"
+date: "May 2020"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(error=TRUE)
+knitr::opts_chunk$set(warning=FALSE)
+```
+
+
+```{r load packages}
+library(tidyverse)
+library(lme4)
+library(lmerTest)
+library(knitr)
+library(psych)
+library(dplyr)
+library(GPArotation)
+library(sjPlot)
+library(sjmisc)
+```
+
+##Load raw Data
+Data from N = 257 heterosexual, naturally cycling women. Each row is the data from a single session.
+See variable names below:
+
+```{r raw data}
+setwd("C:/Users/jjuenge/Desktop/data")
+#rating raw data
+data_raw <- read.csv("cycle2_rating_male_bodies.csv",sep =";",dec =",", header=TRUE)
+
+#numbers as numeric, factors as factor
+for(i in c(2,4:9, 11:52)){
+  data_raw[,i] <- as.numeric(as.character(data_raw[,i]))
+}
+
+for(i in c(1,3,10)){
+  data_raw[,i] <- as.factor(unlist(data_raw[,i]))
+}
+
+#male body measures
+male_bodies <- read.csv("male_body_characteristics_full.csv",sep =";",dec =",", header=TRUE)
+
+for(i in c(2:14)){
+  male_bodies[,i] <- as.numeric(as.character(male_bodies[,i]))
+}
+
+
+```
+
+
+##Load cleaned combined long-format data
+#Please check the OSF (https://osf.io/4jcuf/) for description of variables and their names
+
+```{r load data}
+#this dataset is used for all analyses!
+
+setwd("C:/Users/jjuenge/Desktop/data")
+#data <-read.csv("data_cycle2_malebodies_cleaned.csv",sep =";",dec =",", header=TRUE)
+data <-read.csv("data_male_female_bodies_objects.csv",sep =";",dec =",", header=TRUE)
+
+##numbers as numeric, categories as factor variables
+for(i in c(3,5:9,11:26,28, 29,31)){
+  data[,i] <- as.numeric(as.character(data[,i]))
+}
+
+for(i in c(1,2,4,10,27,30)){
+  data[,i] <- as.factor(data[,i])
+}
+
+
+#Scale sexual desire, self-reported stress and all male variables
+data$roney_desire <- scale(data$roney_desire)
+data$stress <- scale(data$stress)
+data$strength <- scale(data$strength)
+data$height <- scale(data$height)
+data$upperarmgirth_mean_leftright <- scale(data$upperarmgirth_mean_leftright)
+data$SHR <- scale(data$SHR)
+data$SCR <- scale(data$SCR)
+data$rel_torso_vol <- scale(data$rel_torso_vol)
+data$testosterone_men <- scale(data$testosterone_men)
+data$dominance <- scale(data$dominance)
+data$Muscularity <- scale(data$Muscularity)
+data$BMI <- scale(data$BMI)
+data$WHtR <- scale(data$WHtR)
+data$WHR <- scale(data$WHR)
+data$Male_Age <- scale(data$Male_Age)
+
+```
+
+#Add mean hormone levels for between-women hormone analyses
+#And subject-mean-centred the hormone values for within-women analyses
+```{r Subject-mean-centre hormones}
+
+
+#############################################################################################################
+#add between-women values
+
+#for mean non-transformed hormone values
+data<-data%>% group_by(Person) %>% mutate(estradiol_mean = mean(estradiol, na.rm=TRUE), 
+                                              progesterone_mean = mean(progesterone, na.rm=TRUE),
+                                              E_P_mean = mean(E_P, na.rm=TRUE))
+
+
+#Scale untransformed mean hormones
+data$estradiol_mean <- scale(data$estradiol_mean)
+data$progesterone_mean <- scale(data$progesterone_mean)
+data$E_P_mean <- scale(data$E_P_mean)
+
+
+#subject-mean-centre hormones
+# and divide by a constant to put all hormones on ~ -0.5 to +0.5 scale
+
+data <- data %>%
+  group_by(Person) %>%
+  mutate(progesterone = (progesterone - mean(progesterone, na.rm=TRUE))/90,
+         estradiol = (estradiol - mean(estradiol, na.rm=TRUE))/4,
+         E_P = (E_P-mean(E_P, na.rm=TRUE))/3) %>%
+  ungroup() %>%
+  as.data.frame()
+data %>%
+  group_by(Person, progesterone,estradiol, E_P) %>%
+  summarise(n = n()) %>%
+  ungroup() %>%
+  gather("hormone", "value", progesterone:E_P) %>%
+  ggplot(aes(value, colour=hormone)) +
+  geom_density(alpha=.5) +
+  scale_x_continuous(limits = c(-1,1))
+
+```
+#Factor analysis for body measures and correlation matrix
+```{r factor analysis}
+names(male_bodies)
+
+male_bodies$strength <- scale(male_bodies$strength)
+male_bodies$height <- scale(male_bodies$height)
+male_bodies$upperarmgirth_mean_leftright <- scale(male_bodies$upperarmgirth_mean_leftright)
+male_bodies$SHR <- scale(male_bodies$SHR)
+male_bodies$SCR <- scale(male_bodies$SCR)
+male_bodies$rel_torso_vol <- scale(male_bodies$rel_torso_vol)
+male_bodies$testosterone_men <- scale(male_bodies$testosterone_men)
+male_bodies$dominance <- scale(male_bodies$dominance)
+male_bodies$Muscularity <- scale(male_bodies$Muscularity)
+male_bodies$BMI <- scale(male_bodies$BMI)
+male_bodies$WHtR <- scale(male_bodies$WHtR)
+male_bodies$WHR <- scale(male_bodies$WHR)
+male_bodies$Age <- scale(male_bodies$Age)
+
+
+measures <- male_bodies[,c("strength","height","upperarmgirth_mean_leftright", "SHR", "SCR", "rel_torso_vol","testosterone_men")]
+
+#correlation matrix
+cor(measures)
+?fa.parallel
+
+#How many factors for exploratory factor analysis?
+parallel <- fa.parallel(measures, fm = 'ml', fa = 'fa')
+
+#test revealed 2 factors.
+EFA <- fa(measures, nfactors = 2, fm="ml", rotate="oblimin", scores = "regression", use="complete.obs", max.iter=50)
+
+#Show factor loadings (Table S9)
+loadings(EFA)
+print.psych(EFA, cut=0.3, sort=T)
+
+#Save new factors, rename them and and merge to data and data2
+EFA <- as.data.frame(cbind(EFA$scores))
+measures2 <- cbind(male_bodies$MaleID, EFA)
+colnames(measures2) <- c("MaleID","shoulder_factor", "strength_factor")
+data <- merge(data, measures2, by = "MaleID")
+
+cor.test(measures2$shoulder_factor, measures2$strength_factor)
+
+table(data$conception_risk)
+
+```
+###Analyses
+
+#Cycle shifts in attractiveness ratings: Attraction
+
+```{r Cycle shifts in attraction}
+
+###Are there cycle shifts in women's attraction?
+
+#Hypothesis 1a
+model1a <- lmer(Rating ~ conception_risk + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk||Person), data = data)
+tab_model(model1a, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#with E_P ratio, Hypothesis 1b
+model1b <- lmer(Rating ~ E_P + ( 1 | Person) + (1 | MaleID) + (1 + E_P||Person), data = data)
+tab_model(model1b, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#moderated by relationship status, Hypothesis 1c
+#Table 1
+model1c<- lmer(Rating ~ conception_risk * relationship_status + (1 |Person) + (1 | MaleID) + (1+ conception_risk*relationship_status||Person),  data = data)
+tab_model(model1c, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#moderated by relationship status, but with E_P ratio, Hypothesis 1d
+#Table 1
+model1c2<- lmer(Rating ~ E_P * relationship_status + (1 |Person) + (1 | MaleID) + (1+ E_P*relationship_status||Person),  data = data)
+tab_model(model1c2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+
+#moderated by self-reported stress, Hypothesis 1d
+#Table S4
+model1d<- lmer(Rating ~ conception_risk * stress + (1 |Person) + (1 | MaleID) + (1+ conception_risk*stress||Person),  data = data)
+tab_model(model1d, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#moderated by self-reported stress, but with E_P ratio, Hypothesis 1d
+#Table S4
+model1d2<- lmer(Rating ~ E_P * stress + (1 |Person) + (1 | MaleID) + (1+ E_P*stress||Person),  data = data)
+tab_model(model1d2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#shifts in mate attraction mediated by sexual desire? H1e
+
+
+#Premises H1e:
+#effect of mediator on outcome
+model_p1_H1e1 <- lmer(Rating ~ roney_desire + ( 1 | Person) + (1 | MaleID) + (1 + roney_desire||Person), data = data)
+tab_model(model_p1_H1e1, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#effect of predictor on mediator
+model_p2_H1e1 <- lmer(roney_desire ~ conception_risk + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk||Person), data = data)
+tab_model(model_p2_H1e1, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#Test H1e:
+modelH1e1<- lmer(Rating ~ conception_risk +roney_desire + (1 | Person) + (1 | MaleID) + (1 + conception_risk + roney_desire || Person), data = data)
+tab_model(modelH1e1, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for E/P rather than conception risk
+#premise: Effect of predictor on mediator
+P2_modelH1e2<- lmer(roney_desire ~ E_P + (1 | Person) + (1 | MaleID) + (1+ E_P||Person), data = data)
+tab_model(P2_modelH1e2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#testing Hypothesis 1e for E/P
+modelH1e2<- lmer(Rating ~ E_P + roney_desire + (1 | Person) + (1 | MaleID) + (1 + E_P + roney_desire||Person), data = data)
+tab_model(modelH1e2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#Hypothesis 1f: Attraction shift (of conception risk) mediated by E/P?
+
+#Premise H1f:
+P_modelH1f<- lmer(E_P ~ conception_risk + (1 | Person) + (1 | MaleID) + (1+conception_risk||Person), data = data)
+tab_model(P_modelH1f,show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#Test H1f:
+modelH1f<- lmer(Rating ~ conception_risk + E_P + (1 | Person) + (1 | MaleID) + (1+conception_risk+ E_P||Person), data = data)
+tab_model(modelH1f,show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+```
+
+
+
+##Exploratory analyses: Attraction shifts
+```{r}
+#repeat the analyses above with estradiol and progesterone separately rather than E/P
+
+#names(data)
+
+#main effect of estradiol and progesterone on men's attractiveness rating, Table S5
+model_e1 <- lmer(Rating ~ estradiol + progesterone + ( 1 | Person) + (1 | MaleID) + (1 + estradiol + progesterone||Person), data = data)
+tab_model(model_e1, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+summary(model_e1)
+
+
+#moderated by relationship status, Table S6
+model_e2 <- lmer(Rating ~ estradiol*relationship_status + progesterone*relationship_status + ( 1 | Person) + (1 | MaleID) + (1 + estradiol*relationship_status + progesterone*relationship_status||Person), data = data)
+tab_model(model_e2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+summary(model_e2)
+
+
+#moderated by self-reported stress, Table S7
+model_e3 <- lmer(Rating ~ estradiol*stress + progesterone*stress + ( 1 | Person) + (1 | MaleID) + (1 + estradiol*stress + progesterone*stress||Person), data = data)
+tab_model(model_e3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+summary(model_e3)
+
+#shifts in mate attraction mediated by sexual desire? H1e
+
+#premise: Effect of predictors on mediator Table S8
+model_e4 <- lmer(roney_desire ~ estradiol + progesterone + ( 1 | Person) + (1 | MaleID) + (1 + estradiol + progesterone||Person), data = data)
+tab_model(model_e4, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+summary(model_e4)
+
+
+#testing Hypothesis 1e with estradiol and progesterone separately Table S9
+model_e5 <- lmer(Rating ~ estradiol + progesterone + roney_desire + ( 1 | Person) + (1 | MaleID) + (1 + estradiol + progesterone + roney_desire||Person), data = data)
+tab_model(model_e5, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+summary(model_e5)
+
+
+#Hypothesis 1f: Attraction shift (of conception risk) mediated by estradiol or progesterone
+
+#Premise H1f Table S10
+model_e6 <- lmer(conception_risk ~ estradiol + progesterone + ( 1 | Person) + (1 | MaleID) + (1 + estradiol + progesterone||Person), data = data)
+tab_model(model_e6, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+
+#Test H1f Table S11
+model_e7 <- lmer(Rating ~ estradiol + progesterone + conception_risk + ( 1 | Person) + (1 | MaleID) + (1 + estradiol + progesterone + conception_risk||Person), data = data)
+tab_model(model_e7, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+```
+```{r attraction for womens bodies}
+###Are there cycle shifts in women's attraction to other women?
+
+#Hypothesis 1a
+f_model1a <- lmer(Rating_f ~ conception_risk + ( 1 | Person) + (1 | FemaleID) + (1 + conception_risk||Person), data = data)
+tab_model(f_model1a, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#with E_P ratio, Hypothesis 1b
+#Table S12
+f_model1b <- lmer(Rating_f ~ E_P + ( 1 | Person) + (1 | FemaleID) + (1 + E_P||Person), data = data)
+tab_model(f_model1b, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#moderated by relationship status, Hypothesis 1c
+#Table S13
+f_model1c<- lmer(Rating_f ~ conception_risk * relationship_status + (1 |Person) + (1 | FemaleID) + (1+ conception_risk*relationship_status||Person),  data = data)
+tab_model(f_model1c, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#moderated by relationship status, but with E_P ratio, Hypothesis 1d
+#Table S14
+f_model1c2<- lmer(Rating_f ~ E_P * relationship_status + (1 |Person) + (1 | FemaleID) + (1+ E_P*relationship_status||Person),  data = data)
+tab_model(f_model1c2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+
+#moderated by self-reported stress, Hypothesis 1d
+#Table S15
+f_model1d<- lmer(Rating_f ~ conception_risk * stress + (1 |Person) + (1 | FemaleID) + (1+ conception_risk*stress||Person),  data = data)
+tab_model(f_model1d, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#moderated by self-reported stress, but with E_P ratio, Hypothesis 1d
+#Table S16
+f_model1d2<- lmer(Rating_f ~ E_P * stress + (1 |Person) + (1 | FemaleID) + (1+ E_P*stress||Person),  data = data)
+tab_model(f_model1d2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#shifts in mate attraction mediated by sexual desire? H1e
+
+
+#Premises H1e:
+#effect of mediator on outcome
+f_model_p1_H1e1 <- lmer(Rating_f ~ roney_desire + ( 1 | Person) + (1 | FemaleID) + (1 + roney_desire||Person), data = data)
+tab_model(f_model_p1_H1e1, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+
+#Test H1e:
+#Table S17
+f_modelH1e1<- lmer(Rating_f ~ conception_risk +roney_desire + (1 | Person) + (1 | FemaleID) + (1 + conception_risk + roney_desire || Person), data = data)
+tab_model(f_modelH1e1, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+
+#Preference shift for female muscularity?
+
+#Hypothesis 2a: for muscularity
+#Table S18
+f_model2a <- lmer(Rating_f ~ conception_risk * Muscularity_f + ( 1 | Person) + (1 | FemaleID) + (1 + conception_risk * Muscularity_f||Person), data = data)
+tab_model(f_model2a, show.std = TRUE,show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+```
+
+
+```{r attraction for objects}
+###Are there cycle shifts in women's attraction to objects (control)?
+
+#Hypothesis 1a
+o_model1a <- lmer(Rating_o ~ conception_risk + ( 1 | Person) + (1 | ObjectID) + (1 + conception_risk||Person), data = data)
+tab_model(o_model1a, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#with E_P ratio, Hypothesis 1b
+#Table S12
+o_model1b <- lmer(Rating_o ~ E_P + ( 1 | Person) + (1 | ObjectID) + (1 + E_P||Person), data = data)
+tab_model(o_model1b, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#moderated by relationship status, Hypothesis 1c
+#Table S13
+o_model1c<- lmer(Rating_o ~ conception_risk * relationship_status + (1 |Person) + (1 | ObjectID) + (1+ conception_risk*relationship_status||Person),  data = data)
+tab_model(o_model1c, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#moderated by relationship status, but with E_P ratio, Hypothesis 1d
+#Table S14
+o_model1c2<- lmer(Rating_o ~ E_P * relationship_status + (1 |Person) + (1 | ObjectID) + (1+ E_P*relationship_status||Person),  data = data)
+tab_model(o_model1c2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+
+#moderated by self-reported stress, Hypothesis 1d
+#Table S15
+o_model1d<- lmer(Rating_o ~ conception_risk * stress + (1 |Person) + (1 | ObjectID) + (1+ conception_risk*stress||Person),  data = data)
+tab_model(o_model1d, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#moderated by self-reported stress, but with E_P ratio, Hypothesis 1d
+#Table S16
+o_model1d2<- lmer(Rating_o ~ E_P * stress + (1 |Person) + (1 | ObjectID) + (1+ E_P*stress||Person),  data = data)
+tab_model(o_model1d2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#shifts in object attraction mediated by sexual desire? H1e
+
+#Test H1e:
+#Table S17
+o_modelH1e1<- lmer(Rating_o ~ conception_risk +roney_desire + (1 | Person) + (1 | ObjectID) + (1 + conception_risk + roney_desire || Person), data = data)
+tab_model(o_modelH1e1, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+```
+
+#Cycle shifts in attractiveness ratings: Mate preferences
+#Hypotheses Block 2
+
+```{r mate preference shifts}
+
+#add between-women hormone effects
+
+#Hypothesis 2a: for muscularity
+#Table 2
+model2a <- lmer(Rating ~ conception_risk * Muscularity + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk * Muscularity||Person), data = data)
+tab_model(model2a,show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#Hypothesis 2b: for dominance
+#Table 2
+model2b <- lmer(Rating ~ conception_risk * dominance + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* dominance||Person), data = data)
+tab_model(model2b, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#Hypothesis 2c: for factor 1
+#Table 2
+model2c <- lmer(Rating ~ conception_risk * shoulder_factor + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* shoulder_factor||Person), data = data)
+tab_model(model2c, show.std = TRUE, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#Hypothesis 2c: for factor 2
+#Table 2
+model2c2 <- lmer(Rating ~ conception_risk * strength_factor + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* strength_factor||Person), data = data)
+tab_model(model2c2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#######################################################################################################
+#with E/P rather than conception risk, Hypothesis 2f, Table 4
+#also including between-women hormone effects in an exploratory manner
+
+#for muscularity
+#Table 3
+model2f1 <- lmer(Rating ~ E_P * Muscularity + E_P_mean * Muscularity + ( 1 | Person) + (1 | MaleID) + (1 + E_P * Muscularity ||Person), data = data)
+#tab_model(model2f1, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+summary(model2f1)
+
+#for dominance
+#Table 3
+model2f2 <- lmer(Rating ~ E_P * dominance + E_P_mean* dominance + ( 1 | Person) + (1 | MaleID) + (1 + E_P* dominance||Person), data = data)
+#tab_model(model2f2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+summary(model2f2)
+
+#for factor 1
+#Table 3
+model2f3 <- lmer(Rating ~ E_P * shoulder_factor + E_P_mean* shoulder_factor + ( 1 | Person) + (1 | MaleID) + (1 + E_P* shoulder_factor||Person), data = data)
+#tab_model(model2f3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+summary(model2f3)
+
+#for factor 2
+#Table 3
+model2f4 <- lmer(Rating ~ E_P * strength_factor + E_P_mean*strength_factor + ( 1 | Person) + (1 | MaleID) + (1 + E_P* strength_factor||Person), data = data)
+#tab_model(model2f4, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+summary(model2f4)
+
+########################################################################################################
+
+#3-way Interactions with relationship status: Hypothesis 2d
+#for muscularity
+#Table S24
+model2d <- lmer(Rating ~ conception_risk * Muscularity * relationship_status + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* Muscularity*relationship_status||Person), data = data)
+tab_model(model2d, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for dominance #Table S24
+model2d2 <- lmer(Rating ~ conception_risk * dominance*relationship_status + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* dominance*relationship_status||Person), data = data)
+tab_model(model2d2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for shoulder factor #Table S25
+model2d3 <- lmer(Rating ~ conception_risk * shoulder_factor*relationship_status + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* shoulder_factor*relationship_status||Person), data = data)
+tab_model(model2d3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for strength factor #Table S25
+model2d4 <- lmer(Rating ~ conception_risk * strength_factor*relationship_status + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* strength_factor*relationship_status||Person), data = data)
+tab_model(model2d4, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+########################################################################################################
+#with E/P rather than  conception risk
+
+#also including between-women hormone effects in an exploratory manner
+
+#for muscularity #Table S26
+model2d5 <- lmer(Rating ~ E_P * Muscularity*relationship_status + E_P_mean * Muscularity*relationship_status + ( 1 | Person) + (1 | MaleID) + (1 + E_P * Muscularity*relationship_status ||Person), data = data)
+tab_model(model2d5, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for dominance #Table S27
+model2d6 <- lmer(Rating ~ E_P * dominance*relationship_status + E_P_mean* dominance*relationship_status + ( 1 | Person) + (1 | MaleID) + (1 + E_P* dominance*relationship_status||Person), data = data)
+tab_model(model2d6, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 1 #Table S28
+model2d7 <- lmer(Rating ~ E_P * shoulder_factor*relationship_status + E_P_mean* shoulder_factor*relationship_status + ( 1 | Person) + (1 | MaleID) + (1 + E_P* shoulder_factor* relationship_status||Person), data = data)
+tab_model(model2d7, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 2 #Table S29
+model2d8 <- lmer(Rating ~ E_P * strength_factor*relationship_status + E_P_mean*strength_factor*relationship_status + ( 1 | Person) + (1 | MaleID) + (1 + E_P* strength_factor*relationship_status||Person), data = data)
+tab_model(model2d8, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+```
+
+```{r self reported stress}
+########################################################################################################
+
+#3-way Interactions with self-reported stress: Hypothesis 2e
+#for muscularity #Table S30
+model2e <- lmer(Rating ~ conception_risk * Muscularity * stress + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* Muscularity*stress||Person), data = data)
+tab_model(model2e, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for dominance #Table S30
+model2e2 <- lmer(Rating ~ conception_risk * dominance*stress + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* dominance*stress||Person), data = data)
+tab_model(model2e2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for shoulder factor #Table S31
+model2e3 <- lmer(Rating ~ conception_risk * shoulder_factor*stress + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* shoulder_factor*stress||Person), data = data)
+tab_model(model2e3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for strength factor #Table S31
+model2e4 <- lmer(Rating ~ conception_risk * strength_factor*stress + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* strength_factor*stress||Person), data = data)
+tab_model(model2e4, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+########################################################################################################
+#with E/P rather than  conception risk
+
+#also including between-women hormone effects in an exploratory manner
+
+#for muscularity #Table S32
+model2e5 <- lmer(Rating ~ E_P * Muscularity*stress + E_P_mean * Muscularity*stress + ( 1 | Person) + (1 | MaleID) + (1 + E_P * Muscularity*stress ||Person), data = data)
+tab_model(model2e5, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for dominance #Table S33
+model2e6 <- lmer(Rating ~ E_P * dominance*stress + E_P_mean* dominance*stress + ( 1 | Person) + (1 | MaleID) + (1 + E_P* dominance*stress||Person), data = data)
+tab_model(model2e6, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 1 #Table S34
+model2e7 <- lmer(Rating ~ E_P * shoulder_factor*stress + E_P_mean* shoulder_factor*stress + ( 1 | Person) + (1 | MaleID) + (1 + E_P* shoulder_factor*stress||Person), data = data)
+tab_model(model2e7, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 2 #Table S35
+model2e8 <- lmer(Rating ~ E_P * strength_factor*stress + E_P_mean*strength_factor*stress + ( 1 | Person) + (1 | MaleID) + (1 + E_P* strength_factor*stress||Person), data = data)
+tab_model(model2e8, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+```
+
+```{r WHtR body fat mass}
+#controlling for body fat mass (with WHtR), Hypothesis 2g
+
+#Hypothesis 2a controlling for WHtR #Table S36
+model2g_fat <- lmer(Rating ~ conception_risk * Muscularity + WHtR * Muscularity+ ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* Muscularity + WHtR * Muscularity||Person), data = data)
+tab_model(model2g_fat, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#Hypothesis 2b: for dominance #Table S36
+model2b_fat <- lmer(Rating ~ conception_risk * dominance + WHtR *dominance + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* dominance + WHtR *dominance||Person), data = data)
+tab_model(model2b_fat, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#Hypothesis 2c: for factor 1 #Table S37
+model2c_fat <- lmer(Rating ~ conception_risk * shoulder_factor + WHtR *shoulder_factor + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* shoulder_factor + WHtR *shoulder_factor||Person), data = data)
+tab_model(model2c_fat, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#Hypothesis 2c: for factor 2 #Table S37
+model2c2_fat <- lmer(Rating ~ conception_risk * strength_factor + WHtR *strength_factor + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* strength_factor + WHtR *strength_factor||Person), data = data)
+tab_model(model2c2_fat, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#######################################################################################################
+#with E/P rather than conception risk, Hypothesis 2f, Table 4
+#also including between-women hormone effects in an exploratory manner
+
+#for muscularity #Table S38
+model2f1_fat <- lmer(Rating ~ E_P * Muscularity + E_P_mean * Muscularity + WHtR *Muscularity + ( 1 | Person) + (1 | MaleID) + (1 + E_P * Muscularity + WHtR *Muscularity ||Person), data = data)
+tab_model(model2f1_fat, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for dominance #Table S38
+model2f2_fat <- lmer(Rating ~ E_P * dominance + E_P_mean* dominance + WHtR *dominance + ( 1 | Person) + (1 | MaleID) + (1 + E_P* dominance + WHtR *dominance||Person), data = data)
+tab_model(model2f2_fat, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 1 #Table S39
+model2f3_fat <- lmer(Rating ~ E_P * shoulder_factor + E_P_mean* shoulder_factor + WHtR *shoulder_factor + ( 1 | Person) + (1 | MaleID) + (1 + E_P* shoulder_factor+ WHtR *shoulder_factor||Person), data = data)
+tab_model(model2f3_fat, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 2 #Table S39
+model2f4_fat <- lmer(Rating ~ E_P * strength_factor + E_P_mean*strength_factor + WHtR *strength_factor + ( 1 | Person) + (1 | MaleID) + (1 + E_P* strength_factor + WHtR *strength_factor||Person), data = data)
+tab_model(model2f4_fat, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+########################################################################################################
+
+#3-way Interactions with relationship status: Hypothesis 2d
+#for muscularity #Table S40
+model2d_fat <- lmer(Rating ~ conception_risk * Muscularity * relationship_status + WHtR *Muscularity* relationship_status+ ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* Muscularity*relationship_status + WHtR *Muscularity*relationship_status||Person), data = data)
+tab_model(model2d_fat, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for dominance #Table S41
+model2d2_fat <- lmer(Rating ~ conception_risk * dominance*relationship_status + WHtR *dominance*relationship_status+ ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* dominance*relationship_status + WHtR *dominance *relationship_status||Person), data = data)
+tab_model(model2d2_fat, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for shoulder factor #Table S42
+model2d3_fat <- lmer(Rating ~ conception_risk * shoulder_factor*relationship_status + WHtR *shoulder_factor * relationship_status + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* shoulder_factor*relationship_status + WHtR *shoulder_factor* relationship_status||Person), data = data)
+tab_model(model2d3_fat, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for strength factor #Table S43
+model2d4_fat <- lmer(Rating ~ conception_risk * strength_factor*relationship_status + WHtR *strength_factor * relationship_status + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* strength_factor*relationship_status + WHtR *strength_factor * relationship_status||Person), data = data)
+tab_model(model2d4_fat, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+########################################################################################################
+#with E/P rather than  conception risk
+
+#also including between-women hormone effects in an exploratory manner
+
+#for muscularity #Table S44
+model2d5_fat <- lmer(Rating ~ E_P * Muscularity*relationship_status + E_P_mean * Muscularity*relationship_status + WHtR *Muscularity * relationship_status + ( 1 | Person) + (1 | MaleID) + (1 + E_P * Muscularity*relationship_status + WHtR *Muscularity * relationship_status||Person), data = data)
+tab_model(model2d5_fat, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for dominance #Table S45
+model2d6_fat <- lmer(Rating ~ E_P * dominance*relationship_status + E_P_mean* dominance*relationship_status + WHtR * dominance * relationship_status+ ( 1 | Person) + (1 | MaleID) + (1 + E_P* dominance*relationship_status + WHtR *dominance * relationship_status||Person), data = data)
+tab_model(model2d6_fat, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 1 #Table S46
+model2d7_fat <- lmer(Rating ~ E_P * shoulder_factor*relationship_status + E_P_mean* shoulder_factor*relationship_status + WHtR *shoulder_factor * relationship_status + ( 1 | Person) + (1 | MaleID) + (1 + E_P* shoulder_factor* relationship_status + WHtR *shoulder_factor* relationship_status||Person), data = data)
+tab_model(model2d7_fat, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 2 #Table S47
+model2d8_fat <- lmer(Rating ~ E_P * strength_factor*relationship_status + E_P_mean*strength_factor*relationship_status + WHtR * strength_factor * relationship_status + ( 1 | Person) + (1 | MaleID) + (1 + E_P* strength_factor*relationship_status + WHtR *strength_factor * relationship_status||Person), data = data)
+tab_model(model2d8_fat, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#3-way Interactions with self-reported stress: Hypothesis 2e
+#for muscularity #Table S48
+model2e_fat <- lmer(Rating ~ conception_risk * Muscularity * stress + WHtR * Muscularity * stress+ ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* Muscularity*stress + WHtR *Muscularity * stress||Person), data = data)
+tab_model(model2e_fat, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for dominance #Table S49
+model2e2_fat <- lmer(Rating ~ conception_risk * dominance*stress + WHtR * dominance * stress+ ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* dominance*stress + WHtR *dominance * stress||Person), data = data)
+tab_model(model2e2_fat, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for shoulder factor #Table S50
+model2e3_fat <- lmer(Rating ~ conception_risk * shoulder_factor*stress + WHtR * shoulder_factor * stress + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* shoulder_factor*stress + WHtR *shoulder_factor * stress||Person), data = data)
+tab_model(model2e3_fat, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for strength factor #Table S51
+model2e4_fat <- lmer(Rating ~ conception_risk * strength_factor*stress + WHtR * strength_factor * stress+ ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* strength_factor*stress + WHtR * strength_factor * stress||Person), data = data)
+tab_model(model2e4_fat, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+########################################################################################################
+#with E/P rather than  conception risk
+
+#also including between-women hormone effects in an exploratory manner
+
+#for muscularity #Table S52
+model2e5_fat <- lmer(Rating ~ E_P * Muscularity*stress + E_P_mean * Muscularity*stress + WHtR *Muscularity * stress + ( 1 | Person) + (1 | MaleID) + (1 + E_P * Muscularity*stress + WHtR *Muscularity * stress||Person), data = data)
+tab_model(model2e5_fat, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for dominance #Table S53
+model2e6_fat <- lmer(Rating ~ E_P * dominance*stress + E_P_mean* dominance*stress + WHtR *dominance * stress+ ( 1 | Person) + (1 | MaleID) + (1 + E_P* dominance*stress + WHtR *dominance * stress||Person), data = data)
+tab_model(model2e6_fat, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 1 #Table S54
+model2e7_fat <- lmer(Rating ~ E_P * shoulder_factor*stress + E_P_mean* shoulder_factor*stress + WHtR *shoulder_factor * stress + ( 1 | Person) + (1 | MaleID) + (1 + E_P* shoulder_factor*stress + WHtR *shoulder_factor * stress||Person), data = data)
+tab_model(model2e7_fat, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 2 #Table S55
+model2e8_fat <- lmer(Rating ~ E_P * strength_factor*stress + E_P_mean*strength_factor*stress + WHtR *strength_factor * stress + ( 1 | Person) + (1 | MaleID) + (1 + E_P* strength_factor*stress + WHtR *strength_factor * stress||Person), data = data)
+tab_model(model2e8_fat, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+```
+
+
+```{r estradiol progesterone}
+#All models with estradiol and progesterone separately rather than E/P
+#also including between-women hormone effects in an exploratory manner
+
+#for muscularity #Table S56
+model2ep1 <- lmer(Rating ~ estradiol * Muscularity + estradiol_mean * Muscularity + progesterone * Muscularity + progesterone_mean * Muscularity + ( 1 | Person) + (1 | MaleID) + (1 + estradiol * Muscularity + progesterone * Muscularity||Person), data = data)
+tab_model(model2ep1, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for dominance #Table S56
+model2ep2 <- lmer(Rating ~ estradiol * dominance + estradiol_mean* dominance + progesterone * dominance + progesterone_mean* dominance + ( 1 | Person) + (1 | MaleID) + (1 + estradiol* dominance + progesterone * dominance||Person), data = data)
+tab_model(model2ep2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 1 #Table S57
+model2ep3 <- lmer(Rating ~ estradiol * shoulder_factor + estradiol_mean* shoulder_factor + progesterone * shoulder_factor + progesterone_mean* shoulder_factor + ( 1 | Person) + (1 | MaleID) + (1 + estradiol* shoulder_factor + progesterone * shoulder_factor||Person), data = data)
+tab_model(model2ep3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 2 #Table S57
+model2ep4 <- lmer(Rating ~ estradiol * strength_factor + estradiol_mean*strength_factor + progesterone * strength_factor + progesterone_mean*strength_factor + ( 1 | Person) + (1 | MaleID) + (1 + estradiol* strength_factor + progesterone * strength_factor||Person), data = data)
+tab_model(model2ep4, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+########################################################################################################
+#three-way interaction with relationship status
+
+#also including between-women hormone effects in an exploratory manner
+
+#for muscularity #Table S58
+model2ep5 <- lmer(Rating ~ estradiol * Muscularity*relationship_status + estradiol_mean * Muscularity*relationship_status + progesterone * Muscularity*relationship_status + progesterone_mean * Muscularity*relationship_status + ( 1 | Person) + (1 | MaleID) + (1 + estradiol * Muscularity*relationship_status + progesterone * Muscularity*relationship_status ||Person), data = data)
+tab_model(model2ep5, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for dominance #Table S59
+model2ep6 <- lmer(Rating ~ estradiol * dominance*relationship_status + estradiol_mean* dominance*relationship_status + progesterone * dominance*relationship_status + progesterone_mean* dominance*relationship_status + ( 1 | Person) + (1 | MaleID) + (1 + estradiol* dominance*relationship_status + progesterone * dominance*relationship_status||Person), data = data)
+tab_model(model2ep6, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 1 #Table S60
+model2ep7 <- lmer(Rating ~ estradiol * shoulder_factor*relationship_status + estradiol_mean* shoulder_factor*relationship_status + progesterone * shoulder_factor*relationship_status + progesterone_mean* shoulder_factor*relationship_status  + ( 1 | Person) + (1 | MaleID) + (1 + estradiol* shoulder_factor* relationship_status + progesterone * shoulder_factor*relationship_status||Person), data = data)
+tab_model(model2ep7, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 2 #Table S61
+model2ep8 <- lmer(Rating ~ estradiol * strength_factor*relationship_status + estradiol_mean*strength_factor*relationship_status + progesterone * strength_factor*relationship_status + progesterone_mean*strength_factor*relationship_status + ( 1 | Person) + (1 | MaleID) + (1 + estradiol* strength_factor*relationship_status + progesterone * strength_factor*relationship_status||Person), data = data)
+tab_model(model2ep8, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+######################################################################################
+#three-way interaction with self-reported stress
+
+#for muscularity #Table S62
+model2ep5 <- lmer(Rating ~ estradiol * Muscularity*stress + estradiol_mean * Muscularity*stress + progesterone * Muscularity*stress + progesterone_mean * Muscularity*stress + ( 1 | Person) + (1 | MaleID) + (1 + estradiol * Muscularity*stress + progesterone * Muscularity*stress||Person), data = data)
+tab_model(model2ep5, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for dominance #Table S63
+model2ep6 <- lmer(Rating ~ estradiol * dominance*stress + estradiol_mean* dominance*stress + progesterone * dominance*stress + progesterone_mean* dominance*stress + ( 1 | Person) + (1 | MaleID) + (1 + estradiol* dominance*stress + progesterone * dominance*stress||Person), data = data)
+tab_model(model2ep6, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 1 #Table S64
+model2ep7 <- lmer(Rating ~ estradiol * shoulder_factor*stress + estradiol_mean* shoulder_factor*stress + progesterone * shoulder_factor*stress + progesterone_mean* shoulder_factor*stress + ( 1 | Person) + (1 | MaleID) + (1 + estradiol* shoulder_factor*stress + progesterone * shoulder_factor*stress||Person), data = data)
+tab_model(model2ep7, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 2 #Table S65
+model2ep8 <- lmer(Rating ~ estradiol * strength_factor*stress + estradiol_mean*strength_factor*stress + progesterone * strength_factor*stress + progesterone_mean*strength_factor*stress + ( 1 | Person) + (1 | MaleID) + (1 + estradiol* strength_factor*stress + progesterone * strength_factor*stress||Person), data = data)
+tab_model(model2ep8, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+############################################################################################################
+#controlling for body fat mass (WHtR)
+############################################################################################################
+
+#for muscularity #Table S66
+model2ep9 <- lmer(Rating ~ estradiol * Muscularity + estradiol_mean * Muscularity + progesterone * Muscularity + progesterone_mean * Muscularity + WHtR *Muscularity + ( 1 | Person) + (1 | MaleID) + (1 + estradiol * Muscularity + progesterone * Muscularity + WHtR *Muscularity||Person), data = data)
+tab_model(model2ep9, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for dominance #Table S67
+model2ep10 <- lmer(Rating ~ estradiol * dominance + estradiol_mean* dominance + progesterone * dominance + progesterone_mean* dominance + WHtR *dominance + ( 1 | Person) + (1 | MaleID) + (1 + estradiol* dominance + progesterone * dominance + WHtR *dominance||Person), data = data)
+tab_model(model2ep10, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 1 #Table S68
+model2ep11 <- lmer(Rating ~ estradiol * shoulder_factor + estradiol_mean* shoulder_factor + progesterone * shoulder_factor + progesterone_mean* shoulder_factor + WHtR *shoulder_factor + ( 1 | Person) + (1 | MaleID) + (1 + estradiol* shoulder_factor + progesterone * shoulder_factor + WHtR *shoulder_factor||Person), data = data)
+tab_model(model2ep11, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 2 #Table S69
+model2ep12 <- lmer(Rating ~ estradiol * strength_factor + estradiol_mean*strength_factor + progesterone * strength_factor + progesterone_mean*strength_factor + WHtR *strength_factor + ( 1 | Person) + (1 | MaleID) + (1 + estradiol* strength_factor + progesterone * strength_factor + WHtR *strength_factor||Person), data = data)
+tab_model(model2ep12, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+########################################################################################################
+#three-way interaction with relationship status
+
+#also including between-women hormone effects in an exploratory manner
+
+#for muscularity #Table S70
+model2ep13 <- lmer(Rating ~ estradiol * Muscularity*relationship_status + estradiol_mean * Muscularity*relationship_status + progesterone * Muscularity*relationship_status + progesterone_mean * Muscularity*relationship_status + WHtR *Muscularity * relationship_status + ( 1 | Person) + (1 | MaleID) + (1 + estradiol * Muscularity*relationship_status + progesterone * Muscularity*relationship_status + WHtR *Muscularity*relationship_status ||Person), data = data)
+tab_model(model2ep13, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for dominance #Table S71
+model2ep14 <- lmer(Rating ~ estradiol * dominance*relationship_status + estradiol_mean* dominance*relationship_status + progesterone * dominance*relationship_status + progesterone_mean* dominance*relationship_status + + WHtR * dominance * relationship_status + ( 1 | Person) + (1 | MaleID) + (1 + estradiol* dominance*relationship_status + progesterone * dominance*relationship_status + WHtR *dominance * relationship_status||Person), data = data)
+tab_model(model2ep14, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 1 #Table S72
+model2ep15 <- lmer(Rating ~ estradiol * shoulder_factor*relationship_status + estradiol_mean* shoulder_factor*relationship_status + progesterone * shoulder_factor*relationship_status + progesterone_mean* shoulder_factor*relationship_status  + WHtR * shoulder_factor * relationship_status + ( 1 | Person) + (1 | MaleID) + (1 + estradiol* shoulder_factor* relationship_status + progesterone * shoulder_factor*relationship_status + WHtR *shoulder_factor * relationship_status ||Person), data = data)
+tab_model(model2ep15, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 2 #Table S73
+model2ep16 <- lmer(Rating ~ estradiol * strength_factor*relationship_status + estradiol_mean*strength_factor*relationship_status + progesterone * strength_factor*relationship_status + progesterone_mean*strength_factor*relationship_status + WHtR * strength_factor * relationship_status+ ( 1 | Person) + (1 | MaleID) + (1 + estradiol* strength_factor*relationship_status + progesterone * strength_factor*relationship_status + WHtR *strength_factor * relationship_status ||Person), data = data)
+tab_model(model2ep16, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+######################################################################################
+#three-way interaction with self-reported stress
+
+#for muscularity #Table S74
+model2ep17 <- lmer(Rating ~ estradiol * Muscularity*stress + estradiol_mean * Muscularity*stress + progesterone * Muscularity*stress + progesterone_mean * Muscularity*stress + WHtR *Muscularity * stress+ ( 1 | Person) + (1 | MaleID) + (1 + estradiol * Muscularity*stress + progesterone * Muscularity*stress + WHtR *Muscularity * stress||Person), data = data)
+tab_model(model2ep17, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for dominance #Table S75
+model2ep18 <- lmer(Rating ~ estradiol * dominance*stress + estradiol_mean* dominance*stress + progesterone * dominance*stress + progesterone_mean* dominance*stress + WHtR * dominance * stress+ ( 1 | Person) + (1 | MaleID) + (1 + estradiol* dominance*stress + progesterone * dominance*stress + WHtR *dominance * stress||Person), data = data)
+tab_model(model2ep18, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 1 #Table S76
+model2ep19 <- lmer(Rating ~ estradiol * shoulder_factor*stress + estradiol_mean* shoulder_factor*stress + progesterone * shoulder_factor*stress + progesterone_mean* shoulder_factor*stress + WHtR * shoulder_factor * stress+ ( 1 | Person) + (1 | MaleID) + (1 + estradiol* shoulder_factor*stress + progesterone * shoulder_factor*stress + WHtR *shoulder_factor * stress||Person), data = data)
+tab_model(model2ep19, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 2 #Table S77
+model2ep20 <- lmer(Rating ~ estradiol * strength_factor*stress + estradiol_mean*strength_factor*stress + progesterone * strength_factor*stress + progesterone_mean*strength_factor*stress + WHtR * strength_factor * stress + ( 1 | Person) + (1 | MaleID) + (1 + estradiol* strength_factor*stress + progesterone * strength_factor*stress + WHtR *strength_factor * stress||Person), data = data)
+tab_model(model2ep20, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+```
+
+
+```{r}
+#Repeat main models from Hypotheses 2c, 2f with masculine indicators separately
+#names(data)
+
+###with conception risk (2c)
+#for strength #Table S19
+model2c3 <- lmer(Rating ~ conception_risk * strength+ ( 1 | Person) + (1 | MaleID) + (1 + conception_risk * strength ||Person), data = data)
+tab_model(model2c3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for height #Table S19
+model2c4 <- lmer(Rating ~ conception_risk * height + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk * height ||Person), data = data)
+tab_model(model2c4, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for upperarm circumference #Table S19
+model2c5 <- lmer(Rating ~ conception_risk * upperarmgirth_mean_leftright + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk * upperarmgirth_mean_leftright ||Person), data = data)
+tab_model(model2c5, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for SHR #Table S19
+model2c6 <- lmer(Rating ~ conception_risk * SHR + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk * SHR ||Person), data = data)
+tab_model(model2c6, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for SCR #Table S20
+model2c7 <- lmer(Rating ~ conception_risk * SCR + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk * SCR ||Person), data = data)
+tab_model(model2c7, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for relative torso volumne #Table S20
+model2c8 <- lmer(Rating ~ conception_risk * rel_torso_vol + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk * rel_torso_vol ||Person), data = data)
+tab_model(model2c8, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for testosterone levels #Table S20
+model2c9 <- lmer(Rating ~ conception_risk * testosterone_men + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk * testosterone_men ||Person), data = data)
+tab_model(model2c9, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+
+###with E/P (2f)
+#for strength #Table S21
+model2f5 <- lmer(Rating ~ E_P * strength + E_P_mean * strength + ( 1 | Person) + (1 | MaleID) + (1 + E_P * strength ||Person), data = data)
+tab_model(model2f5, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for height #Table S21
+model2f6 <- lmer(Rating ~ E_P * height + E_P_mean * height + ( 1 | Person) + (1 | MaleID) + (1 + E_P * height ||Person), data = data)
+tab_model(model2f6, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for upperarm circumference #Table S21
+model2f7 <- lmer(Rating ~ E_P * upperarmgirth_mean_leftright + E_P_mean * upperarmgirth_mean_leftright + ( 1 | Person) + (1 | MaleID) + (1 + E_P * upperarmgirth_mean_leftright ||Person), data = data)
+tab_model(model2f7, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for SHR #Table S22
+model2f8 <- lmer(Rating ~ E_P * SHR + E_P_mean * SHR + ( 1 | Person) + (1 | MaleID) + (1 + E_P * SHR ||Person), data = data)
+tab_model(model2f8, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for SCR #Table S22
+model2f9 <- lmer(Rating ~ E_P * SCR + E_P_mean * SCR + ( 1 | Person) + (1 | MaleID) + (1 + E_P * SCR ||Person), data = data)
+tab_model(model2f9, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for relative torso volumne #Table S22
+model2f10 <- lmer(Rating ~ E_P * rel_torso_vol + E_P_mean * rel_torso_vol + ( 1 | Person) + (1 | MaleID) + (1 + E_P * rel_torso_vol ||Person), data = data)
+tab_model(model2f10, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for testosterone levels #Table S23
+model2f11 <- lmer(Rating ~ E_P * testosterone_men + E_P_mean * testosterone_men + ( 1 | Person) + (1 | MaleID) + (1 + E_P * testosterone_men ||Person), data = data)
+tab_model(model2f11, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+```
+```{r Cycle shifts in attraction controlling for session}
+
+###Controlling main analyses for session
+
+#Hypothesis 1a
+s_model1a <- lmer(Rating ~ conception_risk + Session + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk ||Person), data = data)
+tab_model(s_model1a, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#with E_P ratio, Hypothesis 1b
+s_model1b <- lmer(Rating ~ E_P + Session + ( 1 | Person) + (1 | MaleID) + (1 + E_P||Person), data = data)
+tab_model(s_model1b, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#moderated by relationship status, Hypothesis 1c
+s_model1c<- lmer(Rating ~ conception_risk * relationship_status + Session + (1 |Person) + (1 | MaleID) + (1+ conception_risk*relationship_status||Person),  data = data)
+tab_model(s_model1c, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#moderated by relationship status, but with E_P ratio, Hypothesis 1d
+s_model1c2<- lmer(Rating ~ E_P * relationship_status + Session + (1 |Person) + (1 | MaleID) + (1+ E_P*relationship_status||Person),  data = data)
+tab_model(s_model1c2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#moderated by self-reported stress, Hypothesis 1d
+s_model1d<- lmer(Rating ~ conception_risk * stress + Session + (1 |Person) + (1 | MaleID) + (1+ conception_risk*stress||Person),  data = data)
+tab_model(s_model1d, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#moderated by self-reported stress, but with E_P ratio, Hypothesis 1d
+s_model1d2<- lmer(Rating ~ E_P * stress + Session + (1 |Person) + (1 | MaleID) + (1+ E_P*stress||Person),  data = data)
+tab_model(s_model1d2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#shifts in mate attraction mediated by sexual desire? H1e
+
+#Premises H1e:
+#effect of mediator on outcome
+s_model_p1_H1e1 <- lmer(Rating ~ roney_desire + Session + ( 1 | Person) + (1 | MaleID) + (1 + roney_desire ||Person), data = data)
+tab_model(s_model_p1_H1e1, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#effect of predictor on mediator
+s_model_p2_H1e1 <- lmer(roney_desire ~ conception_risk + Session + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk||Person), data = data)
+tab_model(s_model_p2_H1e1, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#Test H1e:
+s_modelH1e1<- lmer(Rating ~ conception_risk +roney_desire + Session + (1 | Person) + (1 | MaleID) + (1 + conception_risk + roney_desire || Person), data = data)
+tab_model(s_modelH1e1, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for E/P rather than conception risk
+#premise: Effect of predictor on mediator
+s_P2_modelH1e2<- lmer(roney_desire ~ E_P + Session +(1 | Person) + (1 | MaleID) + (1+ E_P||Person), data = data)
+tab_model(s_P2_modelH1e2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#testing Hypothesis 1e for E/P
+s_modelH1e2<- lmer(Rating ~ E_P + roney_desire + Session + (1 | Person) + (1 | MaleID) + (1 + E_P + roney_desire||Person), data = data)
+tab_model(s_modelH1e2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#Hypothesis 1f: Attraction shift (of conception risk) mediated by E/P?
+
+#Premise H1f:
+s_P_modelH1f<- lmer(E_P ~ conception_risk + Session + (1 | Person) + (1 | MaleID) + (1+conception_risk ||Person), data = data)
+tab_model(s_P_modelH1f, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#Test H1f:
+s_modelH1f<- lmer(Rating ~ conception_risk + E_P + Session + (1 | Person) + (1 | MaleID) + (1+conception_risk+ E_P||Person), data = data)
+tab_model(s_modelH1f,show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+```
+
+
+
+```{r controlling for session 2}
+#main analyses for preference shifts controlling for session
+
+#Hypothesis 2a
+s_model2g <- lmer(Rating ~ conception_risk * Muscularity + Session + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* Muscularity||Person), data = data)
+tab_model(s_model2g, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#Hypothesis 2b: for dominance
+s_model2b <- lmer(Rating ~ conception_risk * dominance + Session + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* dominance||Person), data = data)
+tab_model(s_model2b, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#Hypothesis 2c: for factor 1
+s_model2c <- lmer(Rating ~ conception_risk * shoulder_factor + Session + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* shoulder_factor||Person), data = data)
+tab_model(s_model2c, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#Hypothesis 2c: for factor 2
+s_model2c2 <- lmer(Rating ~ conception_risk * strength_factor + Session + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* strength_factor||Person), data = data)
+tab_model(s_model2c2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#######################################################################################################
+#with E/P rather than conception risk, Hypothesis 2f, Table 4
+#also including between-women hormone effects in an exploratory manner
+
+#for muscularity
+s_model2f1 <- lmer(Rating ~ E_P * Muscularity + E_P_mean * Muscularity + Session + ( 1 | Person) + (1 | MaleID) + (1 + E_P * Muscularity ||Person), data = data)
+tab_model(s_model2f1, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for dominance
+s_model2f2 <- lmer(Rating ~ E_P * dominance + E_P_mean* dominance + Session + ( 1 | Person) + (1 | MaleID) + (1 + E_P* dominance||Person), data = data)
+tab_model(s_model2f2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 1
+s_model2f3 <- lmer(Rating ~ E_P * shoulder_factor + E_P_mean* shoulder_factor + Session + ( 1 | Person) + (1 | MaleID) + (1 + E_P* shoulder_factor||Person), data = data)
+tab_model(s_model2f3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 2
+s_model2f4 <- lmer(Rating ~ E_P * strength_factor + E_P_mean*strength_factor + Session+ ( 1 | Person) + (1 | MaleID) + (1 + E_P* strength_factor||Person), data = data)
+tab_model(s_model2f4, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+########################################################################################################
+
+#3-way Interactions with relationship status: Hypothesis 2d
+#for muscularity
+s_model2d <- lmer(Rating ~ conception_risk * Muscularity * relationship_status + Session +( 1 | Person) + (1 | MaleID) + (1 + conception_risk* Muscularity*relationship_status||Person), data = data)
+tab_model(s_model2d, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for dominance
+s_model2d2 <- lmer(Rating ~ conception_risk * dominance*relationship_status + Session+ ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* dominance*relationship_status||Person), data = data)
+tab_model(s_model2d2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for shoulder factor
+s_model2d3<- lmer(Rating ~ conception_risk * shoulder_factor*relationship_status + Session + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* shoulder_factor*relationship_status||Person), data = data)
+tab_model(s_model2d3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for strength factor
+s_model2d4 <- lmer(Rating ~ conception_risk * strength_factor*relationship_status + Session + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* strength_factor*relationship_status||Person), data = data)
+tab_model(s_model2d4, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+########################################################################################################
+#with E/P rather than  conception risk
+
+#also including between-women hormone effects in an exploratory manner
+
+#for muscularity
+s_model2d5 <- lmer(Rating ~ E_P * Muscularity*relationship_status + E_P_mean * Muscularity*relationship_status + Session + ( 1 | Person) + (1 | MaleID) + (1 + E_P * Muscularity*relationship_status||Person), data = data)
+tab_model(s_model2d5, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for dominance
+s_model2d6<- lmer(Rating ~ E_P * dominance*relationship_status + E_P_mean* dominance*relationship_status + Session + ( 1 | Person) + (1 | MaleID) + (1 + E_P* dominance*relationship_status||Person), data = data)
+tab_model(s_model2d6, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 1
+s_model2d7 <- lmer(Rating ~ E_P * shoulder_factor*relationship_status + E_P_mean* shoulder_factor*relationship_status + Session + ( 1 | Person) + (1 | MaleID) + (1 + E_P* shoulder_factor* relationship_status||Person), data = data)
+tab_model(s_model2d7, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 2
+s_model2d8 <- lmer(Rating ~ E_P * strength_factor*relationship_status + E_P_mean*strength_factor*relationship_status + Session + ( 1 | Person) + (1 | MaleID) + (1 + E_P* strength_factor*relationship_status||Person), data = data)
+tab_model(s_model2d8, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#3-way Interactions with self-reported stress: Hypothesis 2e
+#for muscularity
+s_model2e <- lmer(Rating ~ conception_risk * Muscularity * stress + Session+ ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* Muscularity*stress||Person), data = data)
+tab_model(s_model2e, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for dominance
+s_model2e2 <- lmer(Rating ~ conception_risk * dominance*stress + Session+ ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* dominance*stress||Person), data = data)
+tab_model(s_model2e2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for shoulder factor
+s_model2e3<- lmer(Rating ~ conception_risk * shoulder_factor*stress + Session + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* shoulder_factor*stress||Person), data = data)
+tab_model(s_model2e3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for strength factor
+s_model2e4 <- lmer(Rating ~ conception_risk * strength_factor*stress + Session+ ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* strength_factor*stress||Person), data = data)
+tab_model(s_model2e4, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+########################################################################################################
+#with E/P rather than  conception risk
+
+#also including between-women hormone effects in an exploratory manner
+
+#for muscularity
+s_model2e5 <- lmer(Rating ~ E_P * Muscularity*stress + E_P_mean * Muscularity*stress + Session + ( 1 | Person) + (1 | MaleID) + (1 + E_P * Muscularity*stress ||Person), data = data)
+tab_model(s_model2e5, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for dominance
+s_model2e6 <- lmer(Rating ~ E_P * dominance*stress + E_P_mean* dominance*stress + Session+ ( 1 | Person) + (1 | MaleID) + (1 + E_P* dominance*stress||Person), data = data)
+tab_model(s_model2e6, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 1
+s_model2e7 <- lmer(Rating ~ E_P * shoulder_factor*stress + E_P_mean* shoulder_factor*stress + Session + ( 1 | Person) + (1 | MaleID) + (1 + E_P* shoulder_factor*stress||Person), data = data)
+tab_model(s_model2e7, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 2
+s_model2e8 <- lmer(Rating ~ E_P * strength_factor*stress + E_P_mean*strength_factor*stress + Session + ( 1 | Person) + (1 | MaleID) + (1 + E_P* strength_factor*stress||Person), data = data)
+tab_model(s_model2e8, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+```
+
+
+
+```{r WHR body fat mass}
+#controlling for body fat mass (with WHR rather than WHtR), Hypothesis 2g
+
+#Hypothesis 2a controlling for WHR
+model2g_fat2 <- lmer(Rating ~ conception_risk * Muscularity + WHR * Muscularity+ ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* Muscularity + WHR * Muscularity||Person), data = data)
+tab_model(model2g_fat2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#Hypothesis 2b: for dominance
+model2b_fat2 <- lmer(Rating ~ conception_risk * dominance + WHR *dominance + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* dominance + WHR *dominance||Person), data = data)
+tab_model(model2b_fat2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#Hypothesis 2c: for factor 1
+model2c_fat2 <- lmer(Rating ~ conception_risk * shoulder_factor + WHR *shoulder_factor + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* shoulder_factor + WHR *shoulder_factor||Person), data = data)
+tab_model(model2c_fat2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#Hypothesis 2c: for factor 2
+model2c2_fat2 <- lmer(Rating ~ conception_risk * strength_factor + WHR *strength_factor + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* strength_factor + WHR *strength_factor||Person), data = data)
+tab_model(model2c2_fat2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#######################################################################################################
+#with E/P rather than conception risk, Hypothesis 2f, Table 4
+#also including between-women hormone effects in an exploratory manner
+
+#for muscularity
+model2f1_fat2 <- lmer(Rating ~ E_P * Muscularity + E_P_mean * Muscularity + WHR *Muscularity + ( 1 | Person) + (1 | MaleID) + (1 + E_P * Muscularity + WHR *Muscularity ||Person), data = data)
+tab_model(model2f1_fat2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for dominance
+model2f2_fat2 <- lmer(Rating ~ E_P * dominance + E_P_mean* dominance + WHR *dominance + ( 1 | Person) + (1 | MaleID) + (1 + E_P* dominance + WHR *dominance||Person), data = data)
+tab_model(model2f2_fat2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 1
+model2f3_fat2 <- lmer(Rating ~ E_P * shoulder_factor + E_P_mean* shoulder_factor + WHR *shoulder_factor + ( 1 | Person) + (1 | MaleID) + (1 + E_P* shoulder_factor+ WHR *shoulder_factor||Person), data = data)
+tab_model(model2f3_fat2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 2
+model2f4_fat2 <- lmer(Rating ~ E_P * strength_factor + E_P_mean*strength_factor + WHR *strength_factor + ( 1 | Person) + (1 | MaleID) + (1 + E_P* strength_factor + WHR *strength_factor||Person), data = data)
+tab_model(model2f4_fat2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+########################################################################################################
+
+#3-way Interactions with relationship status: Hypothesis 2d
+#for muscularity
+model2d_fat2 <- lmer(Rating ~ conception_risk * Muscularity * relationship_status + WHR *Muscularity* relationship_status+ ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* Muscularity*relationship_status + WHR *Muscularity*relationship_status||Person), data = data)
+tab_model(model2d_fat2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for dominance
+model2d2_fat2 <- lmer(Rating ~ conception_risk * dominance*relationship_status + WHR *dominance*relationship_status+ ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* dominance*relationship_status + WHR *dominance *relationship_status||Person), data = data)
+tab_model(model2d2_fat2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for shoulder factor
+model2d3_fat2 <- lmer(Rating ~ conception_risk * shoulder_factor*relationship_status + WHR *shoulder_factor * relationship_status + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* shoulder_factor*relationship_status + WHR *shoulder_factor* relationship_status||Person), data = data)
+tab_model(model2d3_fat2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for strength factor
+model2d4_fat2 <- lmer(Rating ~ conception_risk * strength_factor*relationship_status + WHR *strength_factor * relationship_status + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* strength_factor*relationship_status + WHR *strength_factor * relationship_status||Person), data = data)
+tab_model(model2d4_fat2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+########################################################################################################
+#with E/P rather than  conception risk
+
+#also including between-women hormone effects in an exploratory manner
+
+#for muscularity
+model2d5_fat2 <- lmer(Rating ~ E_P * Muscularity*relationship_status + E_P_mean * Muscularity*relationship_status + WHR *Muscularity * relationship_status + ( 1 | Person) + (1 | MaleID) + (1 + E_P * Muscularity*relationship_status + WHR *Muscularity * relationship_status||Person), data = data)
+tab_model(model2d5_fat2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for dominance
+model2d6_fat2 <- lmer(Rating ~ E_P * dominance*relationship_status + E_P_mean* dominance*relationship_status + WHR * dominance * relationship_status+ ( 1 | Person) + (1 | MaleID) + (1 + E_P* dominance*relationship_status + WHR *dominance * relationship_status||Person), data = data)
+tab_model(model2d6_fat2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 1
+model2d7_fat2 <- lmer(Rating ~ E_P * shoulder_factor*relationship_status + E_P_mean* shoulder_factor*relationship_status + WHR *shoulder_factor * relationship_status + ( 1 | Person) + (1 | MaleID) + (1 + E_P* shoulder_factor* relationship_status + WHR *shoulder_factor* relationship_status||Person), data = data)
+tab_model(model2d7_fat2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 2
+model2d8_fat2 <- lmer(Rating ~ E_P * strength_factor*relationship_status + E_P_mean*strength_factor*relationship_status + WHR * strength_factor * relationship_status + ( 1 | Person) + (1 | MaleID) + (1 + E_P* strength_factor*relationship_status + WHR *strength_factor * relationship_status||Person), data = data)
+tab_model(model2d8_fat2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#3-way Interactions with self-reported stress: Hypothesis 2e
+#for muscularity
+model2e_fat2 <- lmer(Rating ~ conception_risk * Muscularity * stress + WHR * Muscularity * stress+ ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* Muscularity*stress + WHR *Muscularity * stress||Person), data = data)
+tab_model(model2e_fat2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for dominance
+model2e2_fat2 <- lmer(Rating ~ conception_risk * dominance*stress + WHR * dominance * stress+ ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* dominance*stress + WHR *dominance * stress||Person), data = data)
+tab_model(model2e2_fat2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for shoulder factor
+model2e3_fat2 <- lmer(Rating ~ conception_risk * shoulder_factor*stress + WHR * shoulder_factor * stress + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* shoulder_factor*stress + WHR *shoulder_factor * stress||Person), data = data)
+tab_model(model2e3_fat2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for strength factor
+model2e4_fat2 <- lmer(Rating ~ conception_risk * strength_factor*stress + WHR * strength_factor * stress+ ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* strength_factor*stress + WHR * strength_factor * stress||Person), data = data)
+tab_model(model2e4_fat2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+########################################################################################################
+#with E/P rather than  conception risk
+
+#also including between-women hormone effects in an exploratory manner
+
+#for muscularity
+model2e5_fat2 <- lmer(Rating ~ E_P * Muscularity*stress + E_P_mean * Muscularity*stress + WHR *Muscularity * stress + ( 1 | Person) + (1 | MaleID) + (1 + E_P * Muscularity*stress + WHR *Muscularity * stress||Person), data = data)
+tab_model(model2e5_fat2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for dominance
+model2e6_fat2 <- lmer(Rating ~ E_P * dominance*stress + E_P_mean* dominance*stress + WHR *dominance * stress+ ( 1 | Person) + (1 | MaleID) + (1 + E_P* dominance*stress + WHR *dominance * stress||Person), data = data)
+tab_model(model2e6_fat2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 1
+model2e7_fat2 <- lmer(Rating ~ E_P * shoulder_factor*stress + E_P_mean* shoulder_factor*stress + WHR *shoulder_factor * stress + ( 1 | Person) + (1 | MaleID) + (1 + E_P* shoulder_factor*stress + WHR *shoulder_factor * stress||Person), data = data)
+tab_model(model2e7_fat2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 2
+model2e8_fat2 <- lmer(Rating ~ E_P * strength_factor*stress + E_P_mean*strength_factor*stress + WHR *strength_factor * stress + ( 1 | Person) + (1 | MaleID) + (1 + E_P* strength_factor*stress + WHR *strength_factor * stress||Person), data = data)
+tab_model(model2e8_fat2, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+```
+
+
+
+```{r BMI body fat mass}
+#controlling for body fat mass (with BMI rather than WHtR), Hypothesis 2g
+
+#Hypothesis 2a controlling for BMI
+model2g_fat3 <- lmer(Rating ~ conception_risk * Muscularity + BMI * Muscularity+ ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* Muscularity + BMI * Muscularity||Person), data = data)
+tab_model(model2g_fat3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#Hypothesis 2b: for dominance
+model2b_fat3 <- lmer(Rating ~ conception_risk * dominance + BMI *dominance + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* dominance + BMI *dominance||Person), data = data)
+tab_model(model2b_fat3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#Hypothesis 2c: for factor 1
+model2c_fat3 <- lmer(Rating ~ conception_risk * shoulder_factor + BMI *shoulder_factor + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* shoulder_factor + BMI *shoulder_factor||Person), data = data)
+tab_model(model2c_fat3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#Hypothesis 2c: for factor 2
+model2c2_fat3 <- lmer(Rating ~ conception_risk * strength_factor + BMI *strength_factor + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* strength_factor + BMI *strength_factor||Person), data = data)
+tab_model(model2c2_fat3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#######################################################################################################
+#with E/P rather than conception risk, Hypothesis 2f, Table 4
+#also including between-women hormone effects in an exploratory manner
+
+#for muscularity
+model2f1_fat3 <- lmer(Rating ~ E_P * Muscularity + E_P_mean * Muscularity + BMI *Muscularity + ( 1 | Person) + (1 | MaleID) + (1 + E_P * Muscularity + BMI *Muscularity ||Person), data = data)
+tab_model(model2f1_fat3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for dominance
+model2f2_fat3 <- lmer(Rating ~ E_P * dominance + E_P_mean* dominance + BMI *dominance + ( 1 | Person) + (1 | MaleID) + (1 + E_P* dominance + BMI *dominance||Person), data = data)
+tab_model(model2f2_fat3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 1
+model2f3_fat3 <- lmer(Rating ~ E_P * shoulder_factor + E_P_mean* shoulder_factor + BMI *shoulder_factor + ( 1 | Person) + (1 | MaleID) + (1 + E_P* shoulder_factor+ BMI *shoulder_factor||Person), data = data)
+tab_model(model2f3_fat3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 2
+model2f4_fat3 <- lmer(Rating ~ E_P * strength_factor + E_P_mean*strength_factor + BMI *strength_factor + ( 1 | Person) + (1 | MaleID) + (1 + E_P* strength_factor + BMI *strength_factor||Person), data = data)
+tab_model(model2f4_fat3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+########################################################################################################
+
+#3-way Interactions with relationship status: Hypothesis 2d
+#for muscularity
+model2d_fat3 <- lmer(Rating ~ conception_risk * Muscularity * relationship_status + BMI *Muscularity* relationship_status+ ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* Muscularity*relationship_status + BMI *Muscularity*relationship_status||Person), data = data)
+tab_model(model2d_fat3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for dominance
+model2d2_fat3 <- lmer(Rating ~ conception_risk * dominance*relationship_status + BMI *dominance*relationship_status+ ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* dominance*relationship_status + BMI *dominance *relationship_status||Person), data = data)
+tab_model(model2d2_fat3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for shoulder factor
+model2d3_fat3 <- lmer(Rating ~ conception_risk * shoulder_factor*relationship_status + BMI *shoulder_factor * relationship_status + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* shoulder_factor*relationship_status + BMI *shoulder_factor* relationship_status||Person), data = data)
+tab_model(model2d3_fat3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for strength factor
+model2d4_fat3 <- lmer(Rating ~ conception_risk * strength_factor*relationship_status + BMI *strength_factor * relationship_status + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* strength_factor*relationship_status + BMI *strength_factor * relationship_status||Person), data = data)
+tab_model(model2d4_fat3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+########################################################################################################
+#with E/P rather than  conception risk
+
+#also including between-women hormone effects in an exploratory manner
+
+#for muscularity
+model2d5_fat3 <- lmer(Rating ~ E_P * Muscularity*relationship_status + E_P_mean * Muscularity*relationship_status + BMI *Muscularity * relationship_status + ( 1 | Person) + (1 | MaleID) + (1 + E_P * Muscularity*relationship_status + BMI *Muscularity * relationship_status||Person), data = data)
+tab_model(model2d5_fat3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for dominance
+model2d6_fat3 <- lmer(Rating ~ E_P * dominance*relationship_status + E_P_mean* dominance*relationship_status + BMI * dominance * relationship_status+ ( 1 | Person) + (1 | MaleID) + (1 + E_P* dominance*relationship_status + BMI *dominance * relationship_status||Person), data = data)
+tab_model(model2d6_fat3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 1
+model2d7_fat3 <- lmer(Rating ~ E_P * shoulder_factor*relationship_status + E_P_mean* shoulder_factor*relationship_status + BMI *shoulder_factor * relationship_status + ( 1 | Person) + (1 | MaleID) + (1 + E_P* shoulder_factor* relationship_status + BMI *shoulder_factor* relationship_status||Person), data = data)
+tab_model(model2d7_fat3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 2
+model2d8_fat3 <- lmer(Rating ~ E_P * strength_factor*relationship_status + E_P_mean*strength_factor*relationship_status + BMI * strength_factor * relationship_status + ( 1 | Person) + (1 | MaleID) + (1 + E_P* strength_factor*relationship_status + BMI *strength_factor * relationship_status||Person), data = data)
+tab_model(model2d8_fat3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#3-way Interactions with self-reported stress: Hypothesis 2e
+#for muscularity
+model2e_fat3 <- lmer(Rating ~ conception_risk * Muscularity * stress + BMI * Muscularity * stress+ ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* Muscularity*stress + BMI *Muscularity * stress||Person), data = data)
+tab_model(model2e_fat3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for dominance
+model2e2_fat3 <- lmer(Rating ~ conception_risk * dominance*stress + BMI * dominance * stress+ ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* dominance*stress + BMI *dominance * stress||Person), data = data)
+tab_model(model2e2_fat3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for shoulder factor
+model2e3_fat3 <- lmer(Rating ~ conception_risk * shoulder_factor*stress + BMI * shoulder_factor * stress + ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* shoulder_factor*stress + BMI *shoulder_factor * stress||Person), data = data)
+tab_model(model2e3_fat3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for strength factor
+model2e4_fat3 <- lmer(Rating ~ conception_risk * strength_factor*stress + BMI * strength_factor * stress+ ( 1 | Person) + (1 | MaleID) + (1 + conception_risk* strength_factor*stress + BMI * strength_factor * stress||Person), data = data)
+tab_model(model2e4_fat3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+########################################################################################################
+#with E/P rather than  conception risk
+
+#also including between-women hormone effects in an exploratory manner
+
+#for muscularity
+model2e5_fat3 <- lmer(Rating ~ E_P * Muscularity*stress + E_P_mean * Muscularity*stress + BMI *Muscularity * stress + ( 1 | Person) + (1 | MaleID) + (1 + E_P * Muscularity*stress + BMI *Muscularity * stress||Person), data = data)
+tab_model(model2e5_fat3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for dominance
+model2e6_fat3 <- lmer(Rating ~ E_P * dominance*stress + E_P_mean* dominance*stress + BMI *dominance * stress+ ( 1 | Person) + (1 | MaleID) + (1 + E_P* dominance*stress + BMI *dominance * stress||Person), data = data)
+tab_model(model2e6_fat3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 1
+model2e7_fat3 <- lmer(Rating ~ E_P * shoulder_factor*stress + E_P_mean* shoulder_factor*stress + BMI *shoulder_factor * stress + ( 1 | Person) + (1 | MaleID) + (1 + E_P* shoulder_factor*stress + BMI *shoulder_factor * stress||Person), data = data)
+tab_model(model2e7_fat3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+#for factor 2
+model2e8_fat3 <- lmer(Rating ~ E_P * strength_factor*stress + E_P_mean*strength_factor*stress + BMI *strength_factor * stress + ( 1 | Person) + (1 | MaleID) + (1 + E_P* strength_factor*stress + BMI *strength_factor * stress||Person), data = data)
+tab_model(model2e8_fat3, show.se = TRUE, show.stat = TRUE, show.re.var = FALSE)
+
+```
+
