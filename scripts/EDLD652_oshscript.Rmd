@@ -18,6 +18,7 @@ library(here)
 library(rio)
 library(psych)
 library(cowplot)
+library(ggplot2)
 ```
 
 #Data Visualization 1
@@ -237,9 +238,22 @@ dv2_data <- data2[, c(1:2,10,12,53) ]
 
 ```
 
+The regression
+```{r interaction}
+
+```
+
+
 THE VISUALIZATION
 ```{r dataviz 2}
-dv2 <- ggplot(dv2_data, aes(x=conception_risk2, y=roney_desire, fill = relationship_status )) +
-  geom_bar()
+dv2_data <-  dv2_data %>% 
+  group_by(conception_risk2, relationship_status) %>% 
+  summarise(desire = mean(roney_desire))
+
+dv2 <- ggplot(dv2_data, aes(x=conception_risk2, y=desire, color=relationship_status)) +
+  geom_line(aes(group=relationship_status)) +
+  geom_point()
+
+dv2
 ```
 
