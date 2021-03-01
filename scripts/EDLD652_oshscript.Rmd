@@ -222,10 +222,24 @@ Trying to combining plots 1A and 1B into one plot side by side - need to make th
 #Data Visualization 2
 ```{r data2}
 data2 <-  import(here("data", "cycle2_rating_male_bodies.csv")) %>% 
-  mutate(relationship_status = as.factor(relationship_status))
-         #roney_desire <- scale(data$roney_desire)) 
+  mutate(relationship_status = as.factor(relationship_status)) %>% 
+  filter(available_CR == 1)
 
-hist(data2$roney_desire)
+describe(data2$conception_risk)
 
+#mutate function not working with conception_risk variable
+data2$conception_risk2 <-ifelse(data2$conception_risk >.12, 1, 0)
+
+data2$conception_risk2 <- factor(data2$conception_risk2)
+
+dv2_data <- data2[, c(1:2,10,12,53) ]
+
+
+```
+
+THE VISUALIZATION
+```{r dataviz 2}
+dv2 <- ggplot(dv2_data, aes(x=conception_risk2, y=roney_desire, fill = relationship_status )) +
+  geom_bar()
 ```
 
