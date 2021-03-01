@@ -9,3 +9,215 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+```{r load packages}
+library(tidyverse)
+library(knitr)
+library(psych)
+library(dplyr)
+library(here)
+library(rio)
+library(psych)
+library(cowplot)
+```
+
+#Data Visualization 1
+```{r import raw data}
+raw_data <- import(here("data", "cycle2_rating_male_bodies.csv"))
+
+# raw_data_long <- import(here("data", "data_male_female_bodies_objects.csv"))
+```
+
+```{r data wrangling}
+dv1_data <- raw_data %>%
+  mutate(session = as.character(Session),
+         person = as.character(Person),
+         w_estradiol = winsor(estradiol),
+         w_progesterone = winsor(progesterone)) %>%
+  
+  #mutate(Days_to_menstruation = as.character(Days_to_menstruation)) %>% 
+  select(session, 
+         progesterone,
+         w_progesterone,
+         estradiol,
+         w_estradiol,
+         E_P,
+         person,
+         conception_risk,
+         Days_to_menstruation) %>% 
+  
+#subject-mean-center hormones, then divide by a constant to put all hormones on ~ -0.5 to +0.5 scale
+  
+  group_by(person) %>% 
+  mutate(estradiol_wmean = mean(w_estradiol, na.rm=TRUE),
+         progesterone_wmean = mean(w_progesterone, na.rm=TRUE),
+         E_P_mean = mean(E_P, na.rm=TRUE),
+         smc_progesterone = (w_progesterone - mean(w_progesterone, na.rm=TRUE))/90,
+         smc_estradiol = (w_estradiol - mean(w_estradiol, na.rm=TRUE))/4,
+         smc_E_P = (E_P-mean(E_P, na.rm=TRUE))/3)
+
+
+dv1 <- dv1_data[, c(7,1:6,10:15,8,9) ]
+
+ 
+# mutate(estradiol_scale_mean <- scale(estradiol_mean),
+#        progesterone_scale_mean <- scale(progesterone_mean),
+#        E_P_scale_mean <- scale(E_P_mean)) %>%
+```
+
+```{r explore}
+hist(dv1$estradiol)
+hist(dv1$w_estradiol)
+hist(dv1$smc_estradiol)
+
+hist(dv1$progesterone)
+hist(dv1$w_progesterone)
+hist(dv1$smc_progesterone)
+
+
+
+```
+
+```{r graph p300}
+#trying this out
+p300 <- dv1 %>% 
+  filter(person == 300)
+
+ggplot(p300, aes(Days_to_menstruation, estradiol)) +
+  geom_point() +
+  scale_x_reverse()
+ggplot(p300, aes(Days_to_menstruation, w_estradiol)) +
+  geom_point() +
+  scale_x_reverse()
+ggplot(p300, aes(Days_to_menstruation, smc_estradiol)) +
+  geom_point() +
+  scale_x_reverse()
+
+
+```
+
+```{r graph play}
+##Estradiol
+ggplot(dv1, aes(smc_estradiol, conception_risk)) +
+  geom_point()
+
+ggplot(dv1, aes(Days_to_menstruation, smc_estradiol)) +
+  geom_point() +
+  scale_x_reverse()
+
+avg_by_day <- dv1 %>% 
+  group_by(Days_to_menstruation) %>% 
+  summarize(daymean = mean(smc_estradiol))
+
+avg_by_day
+
+ggplot(avg_by_day, aes(Days_to_menstruation, daymean)) +
+  geom_point() +
+  scale_x_reverse() +
+  geom_line()
+
+
+##Progesterone
+
+
+#Only 10 "days to menstruation" have avg P data
+
+avg_by_day_p <- dv1 %>% 
+  filter(smc_progesterone != "NA") %>% 
+  group_by(Days_to_menstruation) %>% 
+  summarize(daymean = mean(smc_progesterone)) 
+
+avg_by_day_p
+
+
+ggplot(avg_by_day_p, aes(Days_to_menstruation, daymean)) +
+  geom_point() +
+  scale_x_reverse() +
+  geom_line()
+
+##E_P ratio
+ggplot(dv1, aes(Days_to_menstruation, E_P)) +
+  geom_point() +
+  scale_x_reverse()
+
+avg_by_day_ep <- dv1 %>% 
+  group_by(Days_to_menstruation) %>% 
+  summarize(daymean = mean(E_P))
+
+ggplot(avg_by_day_ep, aes(Days_to_menstruation, daymean)) +
+  geom_point() +
+  scale_x_reverse() 
+
+
+
+```
+
+```{r pivot longer}
+dv1_long <- dv1 %>% 
+  pivot_longer(
+    cols = c("progesterone", "estradiol"), 
+    names_to = "raw_hormone_type",
+    values_to = "raw_hormone_level") %>% 
+  pivot_longer(
+    cols = c("w_progesterone", "w_estradiol"), 
+    names_to = "w_hormone_type",
+    values_to = "w_hormone_level") %>% 
+  pivot_longer(
+    cols = c("smc_progesterone", "smc_estradiol"), 
+    names_to = "smc_hormone_type",
+    values_to = "smc_hormone_level") 
+  
+
+```
+
+THE VISUALIZATION
+```{r DV1}
+#The FILTERING code below saved me. All the NA's were orgionally giving me lots of trouble!
+
+#RAW
+dv1_raw <- dv1_long %>% 
+  filter(raw_hormone_level != "NA") %>% 
+  group_by(Days_to_menstruation, raw_hormone_type) %>% 
+  summarize(daymean = mean(raw_hormone_level))
+
+ggplot(dv1_raw, aes(Days_to_menstruation, daymean, color=raw_hormone_type)) +
+  theme_minimal() +
+  geom_point() +
+  scale_x_reverse() +
+  geom_line()
+
+#Winsorized
+dv1_w_data <- dv1_long %>% 
+  filter(w_hormone_level != "NA") %>% 
+  group_by(Days_to_menstruation, w_hormone_type) %>% 
+  summarize(daymean = mean(w_hormone_level))
+
+DV1A <- ggplot(dv1_w_data, aes(Days_to_menstruation, daymean, color=w_hormone_type)) +
+  theme_minimal() +
+  geom_point() +
+  scale_x_reverse() +
+  geom_line()
+
+#SMC
+dv1_smc_data <- dv1_long %>% 
+  filter(smc_hormone_level != "NA") %>% 
+  group_by(Days_to_menstruation, smc_hormone_type) %>% 
+  summarize(daymean = mean(smc_hormone_level))
+
+DV1B <- ggplot(dv1_smc, aes(Days_to_menstruation, daymean, color=smc_hormone_type)) +
+  theme_minimal() +
+  geom_point() +
+  scale_x_reverse() +
+  geom_line()
+```
+
+Trying to combining plots 1A and 1B into one plot side by side - need to make this work
+```{r DV1 Combine}
+# combined1 <- plot_grid(DV1A, DV1B, labels = c("Average Winsorized Hormone Level by Day to Menstruation", "Average Subject-Mean-Cendered Hormone Level by Day to Menstruation"), align = "hv", nrow = 2, hjust = -.05, vjust = 1)
+# 
+# #Adding a caption
+# final1 <- ggdraw(add_sub(combined1, "Winsorized and Subject-Mean-Centered Hormones Across the Menstrual Cycle", x = .5, y = 1, hjust = .3, vjust = 0.5, fontfamily = "",
+#   fontface = "plain", colour = "black", size = 10, angle = 0,
+#   lineheight = 0.9))
+```
+#Data Visualization 2
+
