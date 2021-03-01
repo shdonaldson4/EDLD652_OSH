@@ -22,13 +22,13 @@ library(cowplot)
 
 #Data Visualization 1
 ```{r import raw data}
-raw_data <- import(here("data", "cycle2_rating_male_bodies.csv"))
+raw_data1 <- import(here("data", "cycle2_rating_male_bodies.csv"))
 
 # raw_data_long <- import(here("data", "data_male_female_bodies_objects.csv"))
 ```
 
 ```{r data wrangling}
-dv1_data <- raw_data %>%
+dv1_data <- raw_data1 %>%
   mutate(session = as.character(Session),
          person = as.character(Person),
          w_estradiol = winsor(estradiol),
@@ -220,4 +220,12 @@ Trying to combining plots 1A and 1B into one plot side by side - need to make th
 #   lineheight = 0.9))
 ```
 #Data Visualization 2
+```{r data2}
+data2 <-  import(here("data", "cycle2_rating_male_bodies.csv")) %>% 
+  mutate(relationship_status = as.factor(relationship_status))
+         #roney_desire <- scale(data$roney_desire)) 
+
+hist(data2$roney_desire)
+
+```
 
