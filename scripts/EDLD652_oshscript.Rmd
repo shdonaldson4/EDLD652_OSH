@@ -238,11 +238,6 @@ dv2_data <- data2[, c(1:2,10,12,53) ]
 
 ```
 
-The regression
-```{r interaction}
-
-```
-
 
 THE VISUALIZATION
 ```{r dataviz 2}
@@ -251,9 +246,26 @@ dv2_data <-  dv2_data %>%
   summarise(desire = mean(roney_desire))
 
 dv2 <- ggplot(dv2_data, aes(x=conception_risk2, y=desire, color=relationship_status)) +
+  theme_minimal() +
   geom_line(aes(group=relationship_status)) +
   geom_point()
 
 dv2
+```
+
+#Data Visualization 3
+```{r data3}
+data3_long <-  import(here("data", "data_male_female_bodies_objects.csv"))
+
+data3_long$cycle_phase <- ifelse(data3_long$Days_to_menstruation <= 13, "Luteal", ifelse(data3_long$Days_to_menstruation >= 14 | data3_long$Days_to_menstruation <= 18, "Ovulatory", "Follicular"))
+
+data3_check <- data3_long %>% 
+  select(Days_to_menstruation, cycle_phase)
+
+data3_check
+
+
+#data3_long$cycle_phase <-cut(data3_long$Days_to_menstruation, c(-4,14,19), labels=c("Luteal", "Ovulatory", "Follicular"))
+
 ```
 
