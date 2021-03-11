@@ -3,6 +3,8 @@ title: "EDLD652_finalscript"
 author: "Sarah Donaldson"
 date: "2/22/2021"
 output: html_document
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
@@ -257,8 +259,10 @@ dv2
 ```{r data3}
 data3_long <-  import(here("data", "data_male_female_bodies_objects.csv"))
 
-data3_long$cycle_phase <- ifelse(data3_long$Days_to_menstruation <= 13, "Luteal", ifelse(data3_long$Days_to_menstruation >= 14 | data3_long$Days_to_menstruation <= 18, "Ovulatory", "Follicular"))
-
+data3_long$cycle_phase <- ifelse(data3_long$Days_to_menstruation <= 13, 
+                                 "Luteal", 
+                                 ifelse(data3_long$Days_to_menstruation >= 19, 
+                                        "Follicular", "Ovulatory"))
 data3_check <- data3_long %>% 
   select(Days_to_menstruation, cycle_phase)
 
